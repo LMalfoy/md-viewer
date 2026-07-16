@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=MD Viewer
+GenericName=Markdown Viewer
+Comment=Open and render Markdown files without editing them
+Exec=@BINARY@ %f
+TryExec=@BINARY@
+Icon=md-viewer
+Terminal=false
+StartupNotify=true
+StartupWMClass=md-viewer
+MimeType=text/markdown;text/x-markdown;
+Categories=Office;Viewer;
+Keywords=Markdown;Viewer;Read-only;CommonMark;

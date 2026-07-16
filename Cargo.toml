@@ -1,0 +1,46 @@
+[package]
+name = "md-viewer"
+version = "0.3.0"
+edition = "2024"
+rust-version = "1.92"
+description = "A lightweight, native, read-only Markdown viewer for Linux"
+license = "MIT"
+repository = "https://github.com/LMalfoy/md-viewer"
+homepage = "https://github.com/LMalfoy/md-viewer"
+readme = "README.md"
+keywords = ["markdown", "viewer", "egui", "linux"]
+categories = ["gui"]
+
+[dependencies]
+eframe = { version = "0.35.0", default-features = false, features = [
+    "accesskit",
+    "default_fonts",
+    "glow",
+    "wayland",
+    "x11",
+] }
+egui_commonmark = { path = "vendor/egui_commonmark", default-features = false, features = [
+    "load-images",
+    "pulldown_cmark",
+    "svg",
+] }
+egui_extras = { version = "0.35.0", default-features = false, features = [
+    "file",
+    "image",
+    "svg",
+] }
+image = { version = "0.25", default-features = false, features = [
+    "gif",
+    "jpeg",
+    "png",
+    "webp",
+] }
+rfd = "0.17.2"
+url = "2.5"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+opt-level = "s"
+panic = "abort"
+strip = true
