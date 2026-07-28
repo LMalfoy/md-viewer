@@ -1,4 +1,6 @@
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::Arc;
 
 use eframe::egui;
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
@@ -10,6 +12,93 @@ const MIN_ZOOM: f32 = 0.75;
 const MAX_ZOOM: f32 = 2.00;
 const ZOOM_STEP: f32 = 0.10;
 const TOOLBAR_TEXT_SIZE: f32 = 16.0;
+const LINE_SCROLL_POINTS: f32 = 48.0;
+const PAGE_OVERLAP_POINTS: f32 = 48.0;
+const DOCUMENT_FONT_FAMILY: &str = "document";
+const DOCUMENT_FONT_CANDIDATES: &[&str] = &["Bookerly", "Noto Serif", "DejaVu Serif"];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DocumentNavigation {
+    Line(i8),
+    Page(i8),
+    Start,
+    End,
+}
+
+fn navigation_for_key(key: egui::Key) -> Option<DocumentNavigation> {
+    match key {
+        egui::Key::ArrowUp => Some(DocumentNavigation::Line(-1)),
+        egui::Key::ArrowDown => Some(DocumentNavigation::Line(1)),
+        egui::Key::ArrowLeft | egui::Key::PageUp => Some(DocumentNavigation::Page(-1)),
+        egui::Key::ArrowRight | egui::Key::PageDown => Some(DocumentNavigation::Page(1)),
+        egui::Key::Home => Some(DocumentNavigation::Start),
+        egui::Key::End => Some(DocumentNavigation::End),
+        _ => None,
+    }
+}
+
+fn consume_document_navigation(context: &egui::Context) -> Option<DocumentNavigation> {
+    [
+        egui::Key::ArrowUp,
+        egui::Key::ArrowDown,
+        egui::Key::ArrowLeft,
+        egui::Key::ArrowRight,
+        egui::Key::PageUp,
+        egui::Key::PageDown,
+        egui::Key::Home,
+        egui::Key::End,
+    ]
+    .into_iter()
+    .find(|key| context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, *key)))
+    .and_then(navigation_for_key)
+}
+
+fn matched_font_path<'a>(requested_family: &str, output: &'a str) -> Option<&'a Path> {
+    let (matched_family, path) = output.trim().split_once('|')?;
+    matched_family
+        .split(',')
+        .any(|family| family.trim().eq_ignore_ascii_case(requested_family))
+        .then(|| Path::new(path))
+}
+
+fn configure_document_fonts(context: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    let mut document_fonts = Vec::new();
+
+    for family in DOCUMENT_FONT_CANDIDATES {
+        let Ok(output) = Command::new("fc-match")
+            .args(["--format=%{family}|%{file}", family])
+            .output()
+        else {
+            break;
+        };
+        let Ok(font_match) = std::str::from_utf8(&output.stdout) else {
+            continue;
+        };
+        let Some(path) = matched_font_path(family, font_match) else {
+            continue;
+        };
+        let Ok(data) = std::fs::read(path) else {
+            continue;
+        };
+
+        let name = format!("document-{family}");
+        fonts
+            .font_data
+            .insert(name.clone(), Arc::new(egui::FontData::from_owned(data)));
+        document_fonts.push(name);
+        break;
+    }
+
+    if let Some(fallbacks) = fonts.families.get(&egui::FontFamily::Proportional) {
+        document_fonts.extend(fallbacks.iter().cloned());
+    }
+    fonts.families.insert(
+        egui::FontFamily::Name(DOCUMENT_FONT_FAMILY.into()),
+        document_fonts,
+    );
+    context.set_fonts(fonts);
+}
 
 fn quiet_button(ui: &mut egui::Ui, text: &str, tooltip: &str) -> bool {
     ui.add(egui::Button::new(egui::RichText::new(text).size(TOOLBAR_TEXT_SIZE)).frame(false))
@@ -18,8 +107,11 @@ fn quiet_button(ui: &mut egui::Ui, text: &str, tooltip: &str) -> bool {
 }
 
 fn scale_document_style(ui: &mut egui::Ui, scale: f32) {
-    for font in ui.style_mut().text_styles.values_mut() {
+    for (text_style, font) in &mut ui.style_mut().text_styles {
         font.size *= scale;
+        if *text_style != egui::TextStyle::Monospace {
+            font.family = egui::FontFamily::Name(DOCUMENT_FONT_FAMILY.into());
+        }
     }
 
     let spacing = ui.spacing_mut();
@@ -46,6 +138,7 @@ impl ViewerApp {
         initial_path: Option<PathBuf>,
     ) -> Self {
         egui_extras::install_image_loaders(&creation_context.egui_ctx);
+        configure_document_fonts(&creation_context.egui_ctx);
         let dark_mode = creation_context.egui_ctx.theme() == egui::Theme::Dark;
         let mut app = Self {
             document: None,
@@ -119,12 +212,6 @@ impl ViewerApp {
         }
     }
 
-    fn reload(&mut self, context: &egui::Context) {
-        if let Some(path) = self.document.as_ref().map(|document| document.path.clone()) {
-            self.open_path(&path, context);
-        }
-    }
-
     fn change_zoom(&mut self, delta: f32) {
         self.zoom = (self.zoom + delta).clamp(MIN_ZOOM, MAX_ZOOM);
     }
@@ -142,12 +229,6 @@ impl ViewerApp {
                 egui::Key::O,
             ))
         });
-        let reload = context.input_mut(|input| {
-            input.consume_shortcut(&egui::KeyboardShortcut::new(
-                egui::Modifiers::COMMAND,
-                egui::Key::R,
-            )) || input.consume_key(egui::Modifiers::NONE, egui::Key::F5)
-        });
         let zoom_in = context.input_mut(|input| {
             input.consume_shortcut(&kb_shortcuts::ZOOM_IN)
                 || input.consume_shortcut(&kb_shortcuts::ZOOM_IN_SECONDARY)
@@ -158,9 +239,6 @@ impl ViewerApp {
 
         if open {
             self.choose_file(context);
-        }
-        if reload {
-            self.reload(context);
         }
         if zoom_in {
             self.change_zoom(ZOOM_STEP);
@@ -183,7 +261,6 @@ impl ViewerApp {
     fn toolbar(&mut self, root_ui: &mut egui::Ui) {
         let context = root_ui.ctx().clone();
         let mut open_clicked = false;
-        let mut reload_clicked = false;
         let mut zoom_in_clicked = false;
         let mut zoom_out_clicked = false;
         let mut zoom_reset_clicked = false;
@@ -195,9 +272,6 @@ impl ViewerApp {
                 ui.add_space(5.0);
                 ui.horizontal(|ui| {
                     open_clicked = quiet_button(ui, "Open", "Open a Markdown file · Ctrl+O");
-                    ui.add_enabled_ui(self.document.is_some(), |ui| {
-                        reload_clicked = quiet_button(ui, "Reload", "Reload · Ctrl+R or F5");
-                    });
 
                     if let Some(document) = &self.document {
                         ui.label(
@@ -234,9 +308,6 @@ impl ViewerApp {
         if open_clicked {
             self.choose_file(&context);
         }
-        if reload_clicked {
-            self.reload(&context);
-        }
         if zoom_in_clicked {
             self.change_zoom(ZOOM_STEP);
         }
@@ -267,6 +338,7 @@ impl ViewerApp {
     }
 
     fn document_view(&mut self, ui: &mut egui::Ui) {
+        let navigation = consume_document_navigation(ui.ctx());
         let Some(document) = &mut self.document else {
             ui.with_layout(
                 egui::Layout::top_down_justified(egui::Align::Center),
@@ -283,9 +355,24 @@ impl ViewerApp {
             return;
         };
 
+        let page_scroll_points =
+            (ui.available_height() - PAGE_OVERLAP_POINTS).max(LINE_SCROLL_POINTS);
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| {
+                match navigation {
+                    Some(DocumentNavigation::Line(lines)) => {
+                        ui.scroll_with_delta(egui::vec2(0.0, -(lines as f32) * LINE_SCROLL_POINTS))
+                    }
+                    Some(DocumentNavigation::Page(pages)) => {
+                        ui.scroll_with_delta(egui::vec2(0.0, -(pages as f32) * page_scroll_points))
+                    }
+                    Some(DocumentNavigation::Start) => {
+                        ui.scroll_to_cursor(Some(egui::Align::TOP));
+                    }
+                    Some(DocumentNavigation::End) | None => {}
+                }
+
                 let available = ui.available_width();
                 let side_space = (available * 0.025).clamp(12.0, 40.0);
                 let content_width = (available - 2.0 * side_space).max(64.0);
@@ -311,6 +398,9 @@ impl ViewerApp {
                             self.temporary_task_changes = true;
                         }
                         ui.add_space(32.0);
+                        if navigation == Some(DocumentNavigation::End) {
+                            ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
+                        }
                     });
                 });
             });
@@ -374,5 +464,101 @@ impl eframe::App for ViewerApp {
                 egui::Color32::WHITE,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_standard_reading_keys() {
+        assert_eq!(
+            navigation_for_key(egui::Key::ArrowUp),
+            Some(DocumentNavigation::Line(-1))
+        );
+        assert_eq!(
+            navigation_for_key(egui::Key::ArrowDown),
+            Some(DocumentNavigation::Line(1))
+        );
+        assert_eq!(
+            navigation_for_key(egui::Key::ArrowLeft),
+            Some(DocumentNavigation::Page(-1))
+        );
+        assert_eq!(
+            navigation_for_key(egui::Key::ArrowRight),
+            Some(DocumentNavigation::Page(1))
+        );
+        assert_eq!(
+            navigation_for_key(egui::Key::PageUp),
+            Some(DocumentNavigation::Page(-1))
+        );
+        assert_eq!(
+            navigation_for_key(egui::Key::PageDown),
+            Some(DocumentNavigation::Page(1))
+        );
+        assert_eq!(
+            navigation_for_key(egui::Key::Home),
+            Some(DocumentNavigation::Start)
+        );
+        assert_eq!(
+            navigation_for_key(egui::Key::End),
+            Some(DocumentNavigation::End)
+        );
+    }
+
+    #[test]
+    fn accepts_only_the_requested_fontconfig_family() {
+        assert_eq!(
+            matched_font_path("Bookerly", "Bookerly|/fonts/Bookerly.ttf"),
+            Some(Path::new("/fonts/Bookerly.ttf"))
+        );
+        assert_eq!(
+            matched_font_path("Bookerly", "Noto Sans|/fonts/NotoSans.ttf"),
+            None
+        );
+    }
+
+    #[test]
+    fn rendered_markdown_uses_comfortable_body_line_height() {
+        let context = egui::Context::default();
+        let mut body_size = 0.0;
+        let output = context.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(180.0, 300.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                body_size = egui::TextStyle::Body.resolve(ui.style()).size;
+                let mut cache = CommonMarkCache::default();
+                CommonMarkViewer::new().show(
+                    ui,
+                    &mut cache,
+                    "Readable body text needs enough room between its wrapped lines to stay comfortable.",
+                );
+            },
+        );
+
+        let paragraph = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text().starts_with("Readable body") => {
+                    Some(&text.galley)
+                }
+                _ => None,
+            })
+            .next()
+            .expect("rendered paragraph");
+        assert!(paragraph.rows.len() > 1);
+        assert!(
+            paragraph
+                .rows
+                .iter()
+                .all(|row| row.size.y >= body_size * 1.4)
+        );
     }
 }

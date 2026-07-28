@@ -17,11 +17,13 @@ engine, web server, or background service.
   association;
 - a compact interface that keeps all controls available without editor chrome;
 - light and dark themes;
-- a comfortably readable 140% default document font;
+- a comfortably readable 140% default document font with relaxed line spacing;
+- locally installed Bookerly for document text when available, with Noto Serif,
+  DejaVu Serif, and the built-in font as automatic fallbacks;
 - document-only zoom controls that leave the toolbar at a stable size;
+- keyboard navigation by line, page, and document boundary;
 - clickable task-list checkboxes for the current viewing session, without
   writing changes to the file;
-- reload without reopening the window;
 - clear in-window errors for missing, non-Markdown, non-UTF-8, or oversized
   files;
 - no editing and no mutation of the opened file.
@@ -34,13 +36,15 @@ the user clicks them. Raw HTML is not executed in a browser engine.
 | Action | Shortcut |
 |---|---|
 | Open | `Ctrl+O` |
-| Reload | `Ctrl+R` or `F5` |
+| Previous/next line | `↑` / `↓` |
+| Previous/next page | `Page Up` / `Page Down` or `←` / `→` |
+| Start/end of document | `Home` / `End` |
 | Zoom in | `Ctrl++` or `Ctrl+=` |
 | Zoom out | `Ctrl+-` |
 | Reset zoom | `Ctrl+0` |
 
 Task-list checkboxes can be toggled while reading. These changes exist only in
-the open window; `Reload` restores the file's actual state from disk.
+the open window and are never written to the file.
 
 ## Build prerequisites
 

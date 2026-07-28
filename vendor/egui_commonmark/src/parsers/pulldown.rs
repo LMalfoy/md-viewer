@@ -11,6 +11,8 @@ use egui_commonmark_backend::misc::*;
 use egui_commonmark_backend::pulldown::*;
 use pulldown_cmark::{Alignment, CowStr, HeadingLevel};
 
+const BODY_LINE_HEIGHT_FACTOR: f32 = 1.45;
+
 /// Newline logic is constructed by the following:
 /// All elements try to insert a newline before them (if they are allowed)
 /// and end their own line.
@@ -696,7 +698,11 @@ impl CommonMarkViewerInternal {
     }
 
     fn event_text(&mut self, text: CowStr, ui: &mut Ui) {
-        let rich_text = self.text_style.to_richtext(ui, &text);
+        let mut rich_text = self.text_style.to_richtext(ui, &text);
+        if self.text_style.heading.is_none() {
+            let body_size = TextStyle::Body.resolve(ui.style()).size;
+            rich_text = rich_text.line_height(Some(body_size * BODY_LINE_HEIGHT_FACTOR));
+        }
         if let Some(image) = &mut self.image {
             image.alt_text.push(rich_text);
         } else if let Some(block) = &mut self.code_block {
