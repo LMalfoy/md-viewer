@@ -1,3 +1,5 @@
+//! Native egui application and document-reading interactions.
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -126,6 +128,7 @@ fn scale_document_style(ui: &mut egui::Ui, scale: f32) {
     spacing.indent *= scale;
 }
 
+/// Stateful native Markdown viewer.
 pub struct ViewerApp {
     document: Option<Document>,
     cache: CommonMarkCache,
@@ -136,6 +139,7 @@ pub struct ViewerApp {
 }
 
 impl ViewerApp {
+    /// Creates the viewer and optionally opens an initial Markdown file.
     pub fn new(
         creation_context: &eframe::CreationContext<'_>,
         initial_path: Option<PathBuf>,

@@ -1,21 +1,34 @@
+//! Markdown path validation, bounded UTF-8 loading, and display metadata.
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use url::Url;
 
+/// Maximum accepted Markdown file size.
+///
+/// The limit keeps a malformed or accidentally huge file from exhausting the
+/// GUI process while loading and rendering it in memory.
 pub const MAX_DOCUMENT_BYTES: u64 = 64 * 1024 * 1024;
 const MARKDOWN_EXTENSIONS: &[&str] = &["md", "markdown", "mdown", "mkd"];
 
+/// Validated Markdown content and metadata used by the viewer.
 #[derive(Debug, Clone)]
 pub struct Document {
+    /// Canonical path when canonicalization succeeds, otherwise the supplied path.
     pub path: PathBuf,
+    /// UTF-8 Markdown source held in memory for rendering.
     pub content: String,
+    /// UTF-8 byte length after removing an optional byte-order mark.
     pub bytes: usize,
+    /// Number of source lines.
     pub lines: usize,
+    /// Parent-directory URI used to resolve relative local images.
     pub image_base_uri: Option<String>,
 }
 
 impl Document {
+    /// Returns the file name used in the toolbar and window title.
     pub fn title(&self) -> String {
         self.path
             .file_name()
@@ -23,11 +36,13 @@ impl Document {
             .unwrap_or_else(|| "Markdown".to_owned())
     }
 
+    /// Returns the full path in a display-friendly, loss-tolerant form.
     pub fn display_path(&self) -> String {
         self.path.to_string_lossy().into_owned()
     }
 }
 
+/// Reports whether a path has one of the supported Markdown extensions.
 pub fn is_markdown_path(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
@@ -38,6 +53,10 @@ pub fn is_markdown_path(path: &Path) -> bool {
         })
 }
 
+/// Loads and validates a regular UTF-8 Markdown file.
+///
+/// Validation rejects unsupported extensions, non-files, invalid UTF-8, and
+/// files larger than [`MAX_DOCUMENT_BYTES`].
 pub fn load_document(path: impl AsRef<Path>) -> Result<Document, String> {
     let supplied_path = path.as_ref();
     if !is_markdown_path(supplied_path) {
@@ -69,6 +88,7 @@ pub fn load_document(path: impl AsRef<Path>) -> Result<Document, String> {
         )
     })?;
     if content.starts_with('\u{feff}') {
+        // A UTF-8 BOM is valid input but should not become part of the rendered document.
         content.remove(0);
     }
 
@@ -89,6 +109,7 @@ pub fn load_document(path: impl AsRef<Path>) -> Result<Document, String> {
     })
 }
 
+/// Formats a byte count as bytes, KiB, or MiB for the status bar.
 pub fn human_size(bytes: usize) -> String {
     if bytes < 1024 {
         format!("{bytes} B")
