@@ -1,13 +1,25 @@
+//! Minimal command-line parser for the viewer executable.
+
 use std::ffi::OsString;
 use std::path::PathBuf;
 
+/// Action selected by the supplied command-line arguments.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LaunchAction {
-    Run { file: Option<PathBuf> },
+    /// Starts the GUI, optionally opening a file immediately.
+    Run {
+        /// Markdown file supplied as the single positional argument.
+        file: Option<PathBuf>,
+    },
+    /// Prints command-line help.
     Help,
+    /// Prints the package version.
     Version,
 }
 
+/// Parses arguments after the executable name.
+///
+/// Returns an error for unknown options or more than one positional file.
 pub fn parse_args<I>(arguments: I) -> Result<LaunchAction, String>
 where
     I: IntoIterator<Item = OsString>,
@@ -41,6 +53,7 @@ where
     Ok(LaunchAction::Run { file })
 }
 
+/// Command-line help shown for `--help` and invalid arguments.
 pub const HELP: &str = "\
 md-viewer - small read-only Markdown viewer
 
