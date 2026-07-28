@@ -15,6 +15,7 @@ const TOOLBAR_TEXT_SIZE: f32 = 16.0;
 const LINE_SCROLL_POINTS: f32 = 48.0;
 const PAGE_OVERLAP_POINTS: f32 = 48.0;
 const DOCUMENT_FONT_FAMILY: &str = "document";
+// Prefer the requested reading font, but keep the app usable on minimal Linux installs.
 const DOCUMENT_FONT_CANDIDATES: &[&str] = &["Bookerly", "Noto Serif", "DejaVu Serif"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -55,6 +56,7 @@ fn consume_document_navigation(context: &egui::Context) -> Option<DocumentNaviga
 
 fn matched_font_path<'a>(requested_family: &str, output: &'a str) -> Option<&'a Path> {
     let (matched_family, path) = output.trim().split_once('|')?;
+    // fontconfig silently substitutes missing families, so only accept an exact family match.
     matched_family
         .split(',')
         .any(|family| family.trim().eq_ignore_ascii_case(requested_family))
@@ -109,6 +111,7 @@ fn quiet_button(ui: &mut egui::Ui, text: &str, tooltip: &str) -> bool {
 fn scale_document_style(ui: &mut egui::Ui, scale: f32) {
     for (text_style, font) in &mut ui.style_mut().text_styles {
         font.size *= scale;
+        // Prose uses the reading font; code must remain visually distinct and monospaced.
         if *text_style != egui::TextStyle::Monospace {
             font.family = egui::FontFamily::Name(DOCUMENT_FONT_FAMILY.into());
         }
@@ -356,11 +359,13 @@ impl ViewerApp {
         };
 
         let page_scroll_points =
+            // Keep one line visible between pages so readers do not lose their place.
             (ui.available_height() - PAGE_OVERLAP_POINTS).max(LINE_SCROLL_POINTS);
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 match navigation {
+                    // egui scroll deltas move the content, hence the inverted reading direction.
                     Some(DocumentNavigation::Line(lines)) => {
                         ui.scroll_with_delta(egui::vec2(0.0, -(lines as f32) * LINE_SCROLL_POINTS))
                     }

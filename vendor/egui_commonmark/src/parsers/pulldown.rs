@@ -699,6 +699,7 @@ impl CommonMarkViewerInternal {
 
     fn event_text(&mut self, text: CowStr, ui: &mut Ui) {
         let mut rich_text = self.text_style.to_richtext(ui, &text);
+        // Headings keep their font metrics; forcing the body height could clip large glyphs.
         if self.text_style.heading.is_none() {
             let body_size = TextStyle::Body.resolve(ui.style()).size;
             rich_text = rich_text.line_height(Some(body_size * BODY_LINE_HEIGHT_FACTOR));
